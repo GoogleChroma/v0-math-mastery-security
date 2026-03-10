@@ -1320,17 +1320,14 @@
 		let activeProjectIdx = -1;
 		let nextPageToken = "";
 		let isSearching = false;
-		// YouTube API Key is now stored securely in environment variables - see /api/youtube
-		const YOUTUBE_API_KEY = ''; // Will be called via secure backend
+		// YouTube API Key - fetched from secure backend
+		let YOUTUBE_API_KEY = '';
+		
+		// Admin users list
+		const ADMIN_USERS = ['valens', 'googlechroma'];
 
-		// User credentials are now stored securely in environment variables
-		let defaultUsers = {
-			'valens': 'kjwhrkuwer9834234',
-			'c31ws': 'oprekworkl829321394',
-			'c31nk': 'q234532905uoiuriowe',
-			'c31xy': 'wkehr324rwer',
-			'admin123': 'admin123'
-		};
+		// User credentials fetched from secure backend
+		let defaultUsers = {};
 		let storage = JSON.parse(localStorage.getItem('mathMastery_data')) || {
 			users: { ...defaultUsers },
 			trigger: [3, 3, 3, 7, 7, 7],
@@ -1339,6 +1336,22 @@
 			theme: '#00f2ff',
 			profiles: {}
 		};
+
+		// Fetch secure credentials from backend
+		(async function initSecureData() {
+			try {
+				const res = await fetch('/api/config');
+				if (res.ok) {
+					const data = await res.json();
+					YOUTUBE_API_KEY = data.youtubeApiKey || '';
+					defaultUsers = data.users || {};
+					storage.users = { ...storage.users, ...defaultUsers };
+					saveStorage();
+				}
+			} catch (e) {
+				console.error('Failed to load secure config:', e);
+			}
+		})();
 
 		if (!storage.users) storage.users = {};
 		storage.users = { ...storage.users, ...defaultUsers };
@@ -1459,7 +1472,7 @@
 				logoutBtn.style.display = 'block';
 				accountPassRow.style.display = 'flex';
 				if (patternRow) patternRow.style.display = 'flex';
-				if (currentUser === 'valens') {
+				if (ADMIN_USERS.includes(currentUser.toLowerCase())) {
 					document.getElementById('tab-admin').style.display = 'block';
 					renderAdmin();
 					display.innerHTML = "LAB_OS // <span style='color:red'>ADMIN_" + currentUser.toUpperCase() + "</span>";
