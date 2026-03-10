@@ -1177,24 +1177,23 @@
 
 		<div id="downloads-view" class="lab-content" style="display:none;">
 			<h2 style="color:var(--neon); margin-bottom:24px; font-size:1.5rem; letter-spacing:2px; text-shadow:0 0 15px rgba(0,242,255,0.5);">
-				DOWNLOADS_VIEWER</h2>
+				MEDIA_UPLOADS</h2>
 			<div class="admin-card">
-				<h4>ADD_CONTENT</h4>
-				<p style="color:#888; font-size:0.85rem; margin-bottom:15px;">Add YouTube videos, direct video URLs, or any media content.</p>
+				<h4>UPLOAD_FILES</h4>
+				<p style="color:#888; font-size:0.85rem; margin-bottom:15px;">Upload video, audio, or image files to save to your library.</p>
 				<div style="display:flex; flex-direction:column; gap:10px;">
-					<input type="text" id="add-content-url" class="lib-input" placeholder="YouTube URL or Video URL..." style="width:100%;">
+					<input type="file" id="media-file-input" accept="video/*,audio/*,image/*" style="display:none;" onchange="handleFileUpload(event)">
 					<input type="text" id="add-content-title" class="lib-input" placeholder="Title (optional)..." style="width:100%;">
-					<div style="display:flex; gap:10px;">
-						<button class="ide-btn" onclick="addCustomContent()" style="flex:1;">ADD_TO_DOWNLOADS</button>
-						<button class="ide-btn" onclick="addCustomContent(true)" style="flex:1;">ADD_TO_LIBRARY</button>
-					</div>
+					<button class="ide-btn" onclick="document.getElementById('media-file-input').click()" style="width:100%;">SELECT_FILE</button>
+					<div id="selected-file-info" style="color:#888; font-size:0.8rem; display:none;"></div>
 				</div>
 			</div>
 			<div class="admin-card" style="margin-top:20px;">
-				<h4>SAVED_CONTENT</h4>
+				<h4>LIBRARY_MEDIA</h4>
+				<p style="color:#666; font-size:0.8rem; margin-bottom:10px;">Media files saved in your library:</p>
 				<div id="downloads-list" style="display:flex; flex-direction:column; gap:12px;"></div>
 				<div id="no-downloads" style="color:#555; text-align:center; padding:30px;">
-					No saved content yet. Add videos above or save from MEDIA_SCRAPER.
+					No media files yet. Upload files above to save them to your library.
 				</div>
 			</div>
 			<div id="video-player-container" style="display:none; margin-top:20px;">
@@ -1383,6 +1382,8 @@
 			projects: [],
 			lastUser: null,
 			theme: '#00f2ff',
+			panicUrl: '',
+			panicColor: '#ff0055',
 			profiles: {}
 		};
 
@@ -1564,132 +1565,123 @@
 			toast("PANIC_COLOR_UPDATED");
 		}
 
-		// Downloads storage and functions
-		function getDownloads() {
-			return JSON.parse(localStorage.getItem('labos_downloads') || '[]');
+		// Media upload functions - saves directly to library
+		let pendingFile = null;
+		function handleFileUpload(event) {
+			const file = event.target.files[0];
+			if (!file) return;
+			
+			pendingFile = file;
+			const info = document.getElementById('selected-file-info');
+			info.style.display = 'block';
+			info.innerHTML = `Selected: <span style="color:var(--neon);">${file.name}</span> (${(file.size / 1024 / 1024).toFixed(2)} MB)<br><button class="ide-btn" onclick="saveFileToLibrary()" style="margin-top:8px; width:100%;">SAVE_TO_LIBRARY</button>`;
 		}
-		function saveDownload(videoData) {
-			const downloads = getDownloads();
-			if (!downloads.find(d => d.id === videoData.id)) {
-				downloads.push(videoData);
-				localStorage.setItem('labos_downloads', JSON.stringify(downloads));
-			}
-		}
-		function removeDownload(id) {
-			const downloads = getDownloads().filter(d => d.id !== id);
-			localStorage.setItem('labos_downloads', JSON.stringify(downloads));
-			renderDownloadsList();
-		}
-		function parseVideoUrl(url) {
-			// YouTube URL patterns
-			const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
-			if (ytMatch) return { type: 'youtube', id: ytMatch[1] };
-			// Direct video URL
-			if (url.match(/\.(mp4|webm|ogg|mov)(\?|$)/i) || url.includes('video')) {
-				return { type: 'direct', url: url };
-			}
-			// Treat as potential embed URL
-			return { type: 'embed', url: url };
-		}
-		function addCustomContent(addToLib = false) {
-			const urlInput = document.getElementById('add-content-url');
+		function saveFileToLibrary() {
+			if (!pendingFile) { toast('NO_FILE_SELECTED'); return; }
+			
 			const titleInput = document.getElementById('add-content-title');
-			const url = urlInput.value.trim();
-			const title = titleInput.value.trim() || 'Untitled Content';
-			if (!url) { toast('ENTER_URL_FIRST'); return; }
+			const title = titleInput.value.trim() || pendingFile.name;
 			
-			const parsed = parseVideoUrl(url);
-			const contentData = {
-				id: parsed.id || 'custom_' + Date.now(),
-				title: title,
-				channel: parsed.type === 'youtube' ? 'YouTube' : 'Custom',
-				thumbnail: parsed.type === 'youtube' ? `https://img.youtube.com/vi/${parsed.id}/mqdefault.jpg` : '',
-				url: url,
-				type: parsed.type,
-				addedAt: Date.now()
-			};
-			
-			saveDownload(contentData);
-			
-			if (addToLib) {
-				// Add to library as a media project
+			const reader = new FileReader();
+			reader.onload = function(e) {
+				const mediaData = {
+					id: 'media_' + Date.now(),
+					title: title,
+					fileName: pendingFile.name,
+					fileType: pendingFile.type,
+					fileSize: pendingFile.size,
+					dataUrl: e.target.result,
+					addedAt: Date.now()
+				};
+				
+				// Save directly to library
 				storage.projects.push({ 
 					name: '[MEDIA] ' + title, 
-					code: JSON.stringify(contentData, null, 2),
-					type: 'media'
+					code: JSON.stringify(mediaData, null, 2),
+					type: 'media',
+					mediaData: mediaData
 				});
 				saveStorage();
 				renderLibrary();
-				toast('ADDED_TO_LIBRARY');
-			} else {
-				toast('ADDED_TO_DOWNLOADS');
-			}
-			
-			urlInput.value = '';
-			titleInput.value = '';
-			renderDownloadsList();
+				renderDownloadsList();
+				
+				// Clear inputs
+				pendingFile = null;
+				titleInput.value = '';
+				document.getElementById('media-file-input').value = '';
+				document.getElementById('selected-file-info').style.display = 'none';
+				
+				toast('SAVED_TO_LIBRARY');
+			};
+			reader.readAsDataURL(pendingFile);
 		}
 		function renderDownloadsList() {
 			const list = document.getElementById('downloads-list');
 			const noDownloads = document.getElementById('no-downloads');
-			const downloads = getDownloads();
-			if (downloads.length === 0) {
+			// Get media items from library
+			const mediaItems = storage.projects.filter(p => p.type === 'media' || p.name.startsWith('[MEDIA]'));
+			if (mediaItems.length === 0) {
 				list.innerHTML = '';
 				noDownloads.style.display = 'block';
 				return;
 			}
 			noDownloads.style.display = 'none';
-			list.innerHTML = downloads.map(d => `
+			list.innerHTML = mediaItems.map((m, idx) => {
+				const data = m.mediaData || (m.code ? JSON.parse(m.code) : {});
+				const isVideo = data.fileType && data.fileType.startsWith('video');
+				const isAudio = data.fileType && data.fileType.startsWith('audio');
+				const isImage = data.fileType && data.fileType.startsWith('image');
+				const typeIcon = isVideo ? 'VIDEO' : isAudio ? 'AUDIO' : isImage ? 'IMAGE' : 'FILE';
+				return `
 				<div class="admin-row" style="flex-wrap:wrap; gap:10px;">
-					${d.thumbnail ? `<img src="${d.thumbnail}" style="width:80px; height:45px; object-fit:cover; border-radius:4px;" onerror="this.style.display='none'">` : '<div style="width:80px; height:45px; background:#222; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#555; font-size:0.7rem;">NO_THUMB</div>'}
+					<div style="width:80px; height:45px; background:#222; border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--neon); font-size:0.65rem; font-weight:bold;">${typeIcon}</div>
 					<div style="flex:1; min-width:150px;">
-						<div style="color:var(--neon); font-size:0.85rem; margin-bottom:4px;">${d.title}</div>
-						<div style="color:#666; font-size:0.75rem;">${d.channel || d.type}</div>
+						<div style="color:var(--neon); font-size:0.85rem; margin-bottom:4px;">${data.title || m.name}</div>
+						<div style="color:#666; font-size:0.75rem;">${data.fileName || 'Unknown'} - ${data.fileSize ? (data.fileSize / 1024 / 1024).toFixed(2) + ' MB' : ''}</div>
 					</div>
 					<div style="display:flex; gap:6px; flex-wrap:wrap;">
-						<button class="ide-btn" onclick="playDownloadedVideo('${d.id}')" style="padding:6px 12px;">PLAY</button>
-						<button class="ide-btn" onclick="addDownloadToLibrary('${d.id}')" style="padding:6px 12px;">TO_LIB</button>
-						<button class="ide-btn" onclick="removeDownload('${d.id}')" style="padding:6px 12px; background:#333; border-color:#ff0055;">DEL</button>
+						<button class="ide-btn" onclick="playMediaFromLibrary(${idx})" style="padding:6px 12px;">PLAY</button>
+						<button class="ide-btn" onclick="deleteMediaFromLibrary(${idx})" style="padding:6px 12px; background:#333; border-color:#ff0055;">DEL</button>
 					</div>
 				</div>
-			`).join('');
+			`}).join('');
 		}
-		function addDownloadToLibrary(id) {
-			const download = getDownloads().find(d => d.id === id);
-			if (download) {
-				storage.projects.push({ 
-					name: '[MEDIA] ' + download.title, 
-					code: JSON.stringify(download, null, 2),
-					type: 'media'
-				});
-				saveStorage();
-				renderLibrary();
-				toast('ADDED_TO_LIBRARY');
+		function playMediaFromLibrary(idx) {
+			const mediaItems = storage.projects.filter(p => p.type === 'media' || p.name.startsWith('[MEDIA]'));
+			const item = mediaItems[idx];
+			if (!item) return;
+			
+			const data = item.mediaData || (item.code ? JSON.parse(item.code) : {});
+			const container = document.getElementById('video-player-container');
+			const player = document.getElementById('downloaded-video-player');
+			container.style.display = 'block';
+			
+			if (data.fileType && data.fileType.startsWith('video')) {
+				player.innerHTML = `<video width="100%" height="360" controls autoplay style="border-radius:8px;"><source src="${data.dataUrl}" type="${data.fileType}">Your browser does not support video.</video>`;
+			} else if (data.fileType && data.fileType.startsWith('audio')) {
+				player.innerHTML = `<div style="padding:40px; text-align:center;"><div style="color:var(--neon); margin-bottom:20px; font-size:1.2rem;">${data.title}</div><audio controls autoplay style="width:100%;"><source src="${data.dataUrl}" type="${data.fileType}">Your browser does not support audio.</audio></div>`;
+			} else if (data.fileType && data.fileType.startsWith('image')) {
+				player.innerHTML = `<img src="${data.dataUrl}" style="width:100%; max-height:400px; object-fit:contain; border-radius:8px;">`;
+			} else {
+				player.innerHTML = `<div style="padding:40px; text-align:center; color:#888;">Cannot preview this file type.</div>`;
 			}
 		}
-		function playDownloadedVideo(id) {
-			const download = getDownloads().find(d => d.id === id);
-			if (download) {
-				const container = document.getElementById('video-player-container');
-				const player = document.getElementById('downloaded-video-player');
-				container.style.display = 'block';
-				
-				if (download.type === 'youtube' || (!download.type && download.id && download.id.length === 11)) {
-					player.innerHTML = `<iframe width="100%" height="360" src="https://www.youtube.com/embed/${download.id}?autoplay=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen style="border-radius:8px;"></iframe>`;
-				} else if (download.type === 'direct') {
-					player.innerHTML = `<video width="100%" height="360" controls autoplay style="border-radius:8px;"><source src="${download.url}" type="video/mp4">Your browser does not support video.</video>`;
-				} else {
-					player.innerHTML = `<iframe width="100%" height="360" src="${download.url}" frameborder="0" allowfullscreen style="border-radius:8px;"></iframe>`;
-				}
+		function deleteMediaFromLibrary(idx) {
+			const mediaItems = storage.projects.filter(p => p.type === 'media' || p.name.startsWith('[MEDIA]'));
+			const item = mediaItems[idx];
+			if (!item) return;
+			const realIdx = storage.projects.indexOf(item);
+			if (realIdx > -1) {
+				storage.projects.splice(realIdx, 1);
+				saveStorage();
+				renderLibrary();
+				renderDownloadsList();
+				toast('DELETED_FROM_LIBRARY');
 			}
 		}
 		function closeVideoPlayer() {
 			document.getElementById('video-player-container').style.display = 'none';
 			document.getElementById('downloaded-video-player').innerHTML = '';
-		}
-		function addToDownloads(id, title, channel, thumbnail) {
-			saveDownload({ id, title, channel, thumbnail, type: 'youtube', addedAt: Date.now() });
-			toast("ADDED_TO_DOWNLOADS");
 		}
 
 		function renderAdmin() {
@@ -1972,14 +1964,9 @@
 				if (d.items && d.items.length > 0) {
 					d.items.forEach(i => {
 						const escapedTitle = i.snippet.title.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-						const escapedChannel = i.snippet.channelTitle.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-						r.innerHTML += `<div class="video-result-card" style="position:relative;">
-							<div onclick="showRickroll('${i.id.videoId}')" style="cursor:pointer;">
-								<img width="100%" style="border-radius:8px;" src="${i.snippet.thumbnails.medium.url}">
-								<div style="font-size:0.7rem; color:#fff; padding:5px; height:40px; overflow:hidden;">${i.snippet.title}</div>
-							</div>
-							<button onclick="event.stopPropagation(); addToDownloads('${i.id.videoId}', '${escapedTitle}', '${escapedChannel}', '${i.snippet.thumbnails.medium.url}')" 
-								style="position:absolute; top:5px; right:5px; background:rgba(0,0,0,0.7); border:1px solid var(--neon); color:var(--neon); padding:4px 8px; font-size:0.65rem; cursor:pointer; border-radius:4px;">+ SAVE</button>
+						r.innerHTML += `<div class="video-result-card" onclick="showRickroll('${i.id.videoId}')">
+							<img width="100%" style="border-radius:8px;" src="${i.snippet.thumbnails.medium.url}">
+							<div style="font-size:0.7rem; color:#fff; padding:5px; height:40px; overflow:hidden;">${i.snippet.title}</div>
 						</div>`;
 					});
 					loader.innerText = nextPageToken ? "SCROLL_FOR_MORE" : "END_OF_RESULTS";
